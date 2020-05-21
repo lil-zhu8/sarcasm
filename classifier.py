@@ -7,6 +7,12 @@ import operator
 from nltk.tokenize import TweetTokenizer 
 from collections import defaultdict
 import random
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.linear_model import LogisticRegression
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics import accuracy_score, precision_score, recall_score
 
 
 # reads items in json file as a list of dicts, where the entries are "article_link", "headline", "is_sarcastic"
@@ -18,10 +24,10 @@ def read_headlines(filename = 'data/headlines/Sarcasm_Headlines_Dataset.json'):
 	        artList.append(art)
 	return artList
 
-def naive_headlines(articles):
+def naive_headlines(articles=read_headlines()):
 	artlist = {}
 	for art in articles:
-		artlist[art[headline]] = art[is_sarcastic]
+		artlist[art["headline"]] = art["is_sarcastic"]
 	return artlist
 
 # extract tweets as dict mapping tweet to sarcasm = 1, not sarcasm = 0 
@@ -75,7 +81,7 @@ class NaiveBayes:
     def buildSplit(self):
         split = self.tsplit()
         k = ['not','sarcasm']
-        data = read_tweets()
+        data = naive_headlines()
         d = list(data.keys())
         s = list(data.values())
         tt = TweetTokenizer()
@@ -184,7 +190,6 @@ def evaluate(USE_BIGRAMS):
     print('Train Accuracy: {}'.format(train_accuracy))
     print('Dev Accuracy: {}'.format(dev_accuracy))
 
-
 def calculate_accuracy(dataset,classifier):
     acc = 0.0
     if len(dataset) == 0:
@@ -197,8 +202,18 @@ def calculate_accuracy(dataset,classifier):
         return acc / len(dataset)
 
 def main():
-	USE_BIGRAMS = False
-	evaluate(USE_BIGRAMS)
+    #evaluate(False)
+    data = naive_headlines()
+    X_train, X_test, y_train, y_test = train_test_split(list(data.keys()), list(data.values()), random_state=1)
+    cv = CountVectorizer()
+    X_train_cv = cv.fit_transform(X_train)
+    X_test_cv = cv.transform(X_test)
+    nb = MultinomialNB()
+    nb.fit(X_train_cv, y_train)
+    predictions = nb.predict(X_test_cv)
+    print('Accuracy score: ', accuracy_score(y_test, predictions))
+    print('Precision score: ', precision_score(y_test, predictions))
+    print('Recall score: ', recall_score(y_test, predictions))
 
 if __name__ == "__main__":
         main()
