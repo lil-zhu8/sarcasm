@@ -35,8 +35,8 @@ def naive_headlines(articles=read_headlines()):
 		numHeadlines = i  
 		if art["is_sarcastic"] == 1: countSarc += 1
 		artlist[art["headline"]] = art["is_sarcastic"]
-	print("num headlines: {}".format(numHeadlines+1))
-	print("percent sarc: {}".format(countSarc/float(numHeadlines)*100))
+	#print("num headlines: {}".format(numHeadlines+1))
+	#print("percent sarc: {}".format(countSarc/float(numHeadlines)*100))
 	return artlist
 
 # extract tweets as dict mapping tweet to sarcasm = 1, not sarcasm = 0 
@@ -93,7 +93,7 @@ class NaiveBayes:
 
 	def __init__(self):
 		"""NaiveBayes initialization"""
-		self.USE_BIGRAMS = False
+		self.USE_BIGRAMS = True
 		self.BEST_MODEL = False
 
 		self.not_docs = 0
@@ -174,43 +174,43 @@ class NaiveBayes:
 				return 'sarcasm'
 			return 'not'
 
-	def addExample(self, klass, words):
-		"""
-		 * TODO
-		 * Train your model on an example document with label klass ('sarcasm' or 'not') and
-		 * words, a list of strings.
-		 * You should store whatever data structures you use for your classifier 
-		 * in the NaiveBayes class.
-		 * Returns nothing
-		"""
-		if klass == 'sarcasm':
-			self.sarcasm_docs += 1
-		else:
-			self.not_docs += 1
-		self.total_docs += 1
+	# def addExample(self, klass, words):
+	# 	"""
+	# 	 * TODO
+	# 	 * Train your model on an example document with label klass ('sarcasm' or 'not') and
+	# 	 * words, a list of strings.
+	# 	 * You should store whatever data structures you use for your classifier 
+	# 	 * in the NaiveBayes class.
+	# 	 * Returns nothing
+	# 	"""
+	# 	if klass == 'sarcasm':
+	# 		self.sarcasm_docs += 1
+	# 	else:
+	# 		self.not_docs += 1
+	# 	self.total_docs += 1
 
-		if(self.USE_BIGRAMS):
-			words.insert(0,'<s>')
-			words.append('</s>')
+	# 	if(self.USE_BIGRAMS):
+	# 		words.insert(0,'<s>')
+	# 		words.append('</s>')
 			
-			for fword,sword in zip(words[:-1],words[1:]):
-				if klass == 'sarcasm':
-					self.count_sarcasm_bigram += 1
-					self.bigrams_sarcasm[(fword,sword)] += 1
-				else:
-					self.count_not_bigram += 1
-					self.bigrams_not[(fword,sword)] += 1
-				self.bi_vocab.add((fword,sword))
+	# 		for fword,sword in zip(words[:-1],words[1:]):
+	# 			if klass == 'sarcasm':
+	# 				self.count_sarcasm_bigram += 1
+	# 				self.bigrams_sarcasm[(fword,sword)] += 1
+	# 			else:
+	# 				self.count_not_bigram += 1
+	# 				self.bigrams_not[(fword,sword)] += 1
+	# 			self.bi_vocab.add((fword,sword))
 
-		else:
-			for word in words:
-				if klass == 'sarcasm':
-					self.count_sarcasm += 1
-					self.words_sarcasm[word] += 1
-				else:
-					self.count_not += 1
-					self.words_not[word] += 1
-				self.vocab.add(word)
+	# 	else:
+	# 		for word in words:
+	# 			if klass == 'sarcasm':
+	# 				self.count_sarcasm += 1
+	# 				self.words_sarcasm[word] += 1
+	# 			else:
+	# 				self.count_not += 1
+	# 				self.words_not[word] += 1
+	# 			self.vocab.add(word)
 
 def evaluate(USE_BIGRAMS):
 	classifier = NaiveBayes()
@@ -241,14 +241,20 @@ def main():
 	#evaluate(False)
 	data = naive_headlines()
 	X_train, X_test, y_train, y_test = train_test_split(list(data.keys()), list(data.values()), random_state=1)
-	cv = CountVectorizer()
-	X_train_cv = cv.fit_transform(X_train)
-	X_test_cv = cv.transform(X_test)
+	# cv = CountVectorizer()
+	# X_train_cv = cv.fit_transform(X_train)
+	# # print(cv.get_feature_names())
+	# X_test_cv = cv.transform(X_test)
+
+	cv2 = CountVectorizer(analyzer='word', ngram_range=(2, 2))
+	X_train_cv2 = cv2.fit_transform(X_train)
+	# print(cv2.get_feature_names())
+	X_test_cv2 = cv2.transform(X_test)
 	
 	# Naive Bayes
 	nb = MultinomialNB()
-	nb.fit(X_train_cv, y_train)
-	predictions = nb.predict(X_test_cv)
+	nb.fit(X_train_cv2, y_train)
+	predictions = nb.predict(X_test_cv2)
 	print('NB Accuracy score: ', accuracy_score(y_test, predictions))
 	print('NB Precision score: ', precision_score(y_test, predictions))
 	print('NB Recall score: ', recall_score(y_test, predictions))
