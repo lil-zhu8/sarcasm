@@ -11,6 +11,8 @@ from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import AdaBoostClassifier
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import CountVectorizer
@@ -246,23 +248,23 @@ def main():
 	# # print(cv.get_feature_names())
 	# X_test_cv = cv.transform(X_test)
 
-	cv2 = CountVectorizer(analyzer='word', ngram_range=(2, 2))
+	cv2 = CountVectorizer(analyzer='word', ngram_range=(1, 1))
 	X_train_cv2 = cv2.fit_transform(X_train)
 	# print(cv2.get_feature_names())
 	X_test_cv2 = cv2.transform(X_test)
 	
 	# Naive Bayes
-	nb = MultinomialNB()
-	nb.fit(X_train_cv2, y_train)
-	predictions = nb.predict(X_test_cv2)
-	print('NB Accuracy score: ', accuracy_score(y_test, predictions))
-	print('NB Precision score: ', precision_score(y_test, predictions))
-	print('NB Recall score: ', recall_score(y_test, predictions))
+	# nb = MultinomialNB()
+	# nb.fit(X_train_cv2, y_train)
+	# predictions = nb.predict(X_test_cv2)
+	# print('NB Accuracy score: ', accuracy_score(y_test, predictions))
+	# print('NB Precision score: ', precision_score(y_test, predictions))
+	# print('NB Recall score: ', recall_score(y_test, predictions))
 
 	# Logistic Regression
 	# lr = LogisticRegression(max_iter=10000)
-	# lr.fit(X_train_cv, y_train)
-	# predictions = lr.predict(X_test_cv)
+	# lr.fit(X_train_cv2, y_train)
+	# predictions = lr.predict(X_test_cv2)
 	# print('LR Accuracy score: ', accuracy_score(y_test, predictions))
 	# print('LR Precision score: ', precision_score(y_test, predictions))
 	# print('LR Recall score: ', recall_score(y_test, predictions))
@@ -283,6 +285,21 @@ def main():
 	# print('RandomForest Precision score: ', precision_score(y_test, predictions))
 	# print('RandomForest Recall score: ', recall_score(y_test, predictions))
 
+	# Gradient Boosting
+	gb = GradientBoostingClassifier(loss='deviance')
+	gb.fit(X_train_cv2, y_train)
+	predictions = gb.predict(X_test_cv2)
+	print('GB Accuracy score: ', accuracy_score(y_test, predictions))
+	print('GB Precision score: ', precision_score(y_test, predictions))
+	print('GB Recall score: ', recall_score(y_test, predictions))
+
+	# K-neighbors
+	# kn = KNeighborsClassifier()
+	# kn.fit(X_train_cv2, y_train)
+	# predictions = kn.predict(X_test_cv2)
+	# print('KN Accuracy score: ', accuracy_score(y_test, predictions))
+	# print('KN Precision score: ', precision_score(y_test, predictions))
+	# print('KN Recall score: ', recall_score(y_test, predictions))
 
 if __name__ == "__main__":
 		main()
