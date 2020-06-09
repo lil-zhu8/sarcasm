@@ -1,29 +1,19 @@
-import json
-import csv
-import sys
-import getopt
-import os
-import math
-import operator
+import json, csv, sys, getopt, os, math, operator, random, scipy, nltk
 import numpy as np
 from nltk.tokenize import TweetTokenizer 
 from collections import defaultdict
-import random
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import AdaBoostClassifier
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier, GradientBoostingClassifier
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.datasets import load_iris
+from sklearn.feature_extraction.text import TfidfTransformer, CountVectorizer
 from sklearn.model_selection import train_test_split
-from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.preprocessing import FunctionTransformer
 from gensim.scripts.glove2word2vec import glove2word2vec
 from gensim.models.keyedvectors import KeyedVectors
-import scipy 
 from scipy.sparse import hstack, csr_matrix
-import nltk
 from nltk.tokenize import word_tokenize
 
 
@@ -51,6 +41,8 @@ def read_tweets(filename = 'data/twitter/sarcasm-dataset.txt'):
             tweetlist[twt[0:len(twt)-2].strip()] = twt[-2]
     return tweetlist
 
+votes_train = []
+votes_test = []
 # returns json file as dict
 def read_reddit(filename = 'data/reddit/comments.json'):
     with open(filename) as f:
@@ -59,6 +51,7 @@ def read_reddit(filename = 'data/reddit/comments.json'):
     return c
 
 def read_reddit_label(filename = 'data/reddit/train-balanced.csv'):
+    comments = read_reddit()
     with open(filename) as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=',')
         line_count = 0
@@ -68,8 +61,14 @@ def read_reddit_label(filename = 'data/reddit/train-balanced.csv'):
             sp = row[0].split('|')
             for i,s in enumerate(sp[1].split()):
                 lab[s] = int(sp[2].split()[i])
+        if filename == 'data/reddit/train-balanced.csv':
+            global votes_train
+            votes_train = [[abs(comments[i]['ups']),abs(comments[i]['downs'])] for i in list(lab.keys())]
+        else:
+            global votes_test
+            votes_test = [[abs(comments[i]['ups']),abs(comments[i]['downs'])] for i in list(lab.keys())]
         print(f'Processed {line_count} lines.')
-        return lab
+        return ([comments[i]['text'] for i in list(lab.keys())], list(lab.values()))
 
 def read_tweets_csv(filename = 'data/twitter/dataset_csv.csv'):
     tweetlist = {}
@@ -81,108 +80,142 @@ def read_tweets_csv(filename = 'data/twitter/dataset_csv.csv'):
     print("num tweets (csv file): {}".format(numTweets+1))
     return tweetlist
 
+def get_length(x):
+    return np.array([len(t) for t in x]).reshape(-1, 1)
+
+posW = set()
+negW = set()
+def buildSentiment():
+    with open('data/sentiment/NRC-emotion-lexicon.txt', 'r') as fp:
+        for line in fp:
+            word,emotion,value = line.split('\t')
+            if emotion == 'positive' and int(value) == 1:
+                posW.add(word)
+            if emotion == 'negative' and int(value) == 1:
+                negW.add(word)
+
+def use_sentiment(x):
+    sent = []
+    for t in x:
+        words = t.split()
+        poscount = negcount = 0
+        for word in words:
+            if word in posW:
+                poscount += 1
+            if word in negW:
+                negcount += 1
+        sent.append([poscount,negcount])
+    return np.array(sent).reshape(-1, 2)
+
+def use_score(x):
+    if len(x) == len(votes_train):
+        return np.array(votes_train).reshape(-1, 2)
+    else:
+        return np.array(votes_test).reshape(-1, 2)
+
+def clf(classifier = MultinomialNB()):
+    c = Pipeline([
+        ('features', FeatureUnion([
+            ('text', Pipeline([
+                ('vectorizer', CountVectorizer(analyzer='char', ngram_range=(1, 6))),
+                # ('tfidf', TfidfTransformer()),
+            ])),
+            ('length', Pipeline([
+                ('count', FunctionTransformer(get_length, validate=False)),
+            ])),
+            ('sentiment', Pipeline([
+                ('sentcount', FunctionTransformer(use_sentiment, validate=False)),
+            ])),
+            ('votes', Pipeline([
+                ('updown', FunctionTransformer(use_score, validate=False)),
+            ]))
+        ])),
+        ('clf', classifier)])
+    return c
+
 def main():
-    # evaluate(False, True)
     # data = naive_headlines()
     # X_train, X_test, y_train, y_test = train_test_split(list(data.keys()), list(data.values()), random_state=1)
-    # print(X_test)
     # cv = CountVectorizer()
     # X_train_cv = cv.fit_transform(X_train)
     # X_test_cv = cv.transform(X_test)
-    # nb = MultinomialNB()
-    # nb.fit(X_train_cv, y_train)
-    # predictions = nb.predict(X_train_cv)
-    # print('Accuracy score: ', accuracy_score(y_train, predictions))
-    # print('Precision score: ', precision_score(y_train, predictions))
-    # print('Recall score: ', recall_score(y_train, predictions))
 
-    # lr = LogisticRegression()
-    # lr.max_iter = 10000
-    # lr.fit(X_train_cv,y_train)
-    # predictions = lr.predict(X_train_cv)
-    # print('Accuracy score: ', accuracy_score(y_train, predictions))
-    # print('Precision score: ', precision_score(y_train, predictions))
-    # print('Recall score: ', recall_score(y_train, predictions))
-
+    # setup for SARC 2.0 dataset
     comments = read_reddit()
-    labels = read_reddit_label()
-    y_train = list(labels.values())
-    X_train = [comments[i]['text'] for i in list(labels.keys())]
-    labels = read_reddit_label('data/reddit/test-balanced.csv')
-    cv = CountVectorizer(ngram_range=(1, 2))
+    X_train,y_train = read_reddit_label()
+    X_test, y_test = read_reddit_label('data/reddit/test-balanced.csv')
+    buildSentiment()
+
+    # cv = CountVectorizer(ngram_range=(1, 2))
     cv = CountVectorizer(analyzer='char', ngram_range=(1, 6))
-    y_test = list(labels.values())
-    X_test = [comments[i]['text'] for i in list(labels.keys())]
     X_train_cv = cv.fit_transform(X_train)
     X_test_cv = cv.transform(X_test)
-    nb = MultinomialNB()
-    nb.fit(X_train_cv, y_train)
-    predictions = nb.predict(X_test_cv)
-    print('Accuracy score: ', accuracy_score(y_test, predictions))
-    print('Precision score: ', precision_score(y_test, predictions))
-    print('Recall score: ', recall_score(y_test, predictions))
 
-    lr = LogisticRegression()
-    lr.fit(X_train_cv,y_train)
-    feature_names = cv.get_feature_names()
-    coefs_with_fns = sorted(zip(lr.coef_[0], feature_names))
+    # Naïve Bayes
+
+    nb = clf()
+    nb.fit(X_train, y_train)
+    predictions = nb.predict(X_test)
+    print('NB Accuracy score: ', accuracy_score(y_test, predictions))
+    print('NB Precision score: ', precision_score(y_test, predictions))
+    print('NB Recall score: ', recall_score(y_test, predictions))
+    print('NB F1 score: ', f1_score(y_test, predictions))
+
+
+    # Logistic Regression
+    lr = clf(LogisticRegression())
+    lr.fit(X_train,y_train)
+
+    # print top 20 weights
+    coeff = lr.named_steps['clf'].coef_[0]
+    fnames = dict(lr.named_steps['features'].transformer_list).get('text').named_steps['vectorizer'].get_feature_names()
+    coefs_with_fns = sorted(zip(coeff[0:len(fnames)+1], fnames))
     top = zip(coefs_with_fns[:20], coefs_with_fns[:-(20 + 1):-1])
 
     for (coef_1, fn_1), (coef_2, fn_2) in top:
         print ("\t%.4f\t%-15s\t\t%.4f\t%-15s" % (coef_1, fn_1, coef_2, fn_2))
 
-    predictions = lr.predict(X_test_cv)
-    print('Accuracy score: ', accuracy_score(y_test, predictions))
-    print('Precision score: ', precision_score(y_test, predictions))
-    print('Recall score: ', recall_score(y_test, predictions))
-    
-    # Naive Bayes
-    # nb = MultinomialNB()
-    # nb.fit(X_train_cv2, y_train)
-    # predictions = nb.predict(X_test_cv2)
-    # print('NB Accuracy score: ', accuracy_score(y_test, predictions))
-    # print('NB Precision score: ', precision_score(y_test, predictions))
-    # print('NB Recall score: ', recall_score(y_test, predictions))
-
-    # Logistic Regression
-    # lr = LogisticRegression(max_iter=10000)
-    # lr.fit(X_train_cv2, y_train)
-    # predictions = lr.predict(X_test_cv2)
-    # print('LR Accuracy score: ', accuracy_score(y_test, predictions))
-    # print('LR Precision score: ', precision_score(y_test, predictions))
-    # print('LR Recall score: ', recall_score(y_test, predictions))
+    predictions = lr.predict(X_test)
+    print('LR Accuracy score: ', accuracy_score(y_test, predictions))
+    print('LR Precision score: ', precision_score(y_test, predictions))
+    print('LR Recall score: ', recall_score(y_test, predictions))
+    print('LR F1 score: ', f1_score(y_test, predictions))
 
     # Adaboost Classifier
-    abc = AdaBoostClassifier(n_estimators=1000, learning_rate = 0.9, random_state=0)
-    abc.fit(X_train_cv, y_train)
-    predictions = abc.predict(X_test_cv)
+    abc = clf(AdaBoostClassifier(n_estimators=1000, learning_rate = 0.9, random_state=0))
+    abc.fit(X_train, y_train)
+    predictions = abc.predict(X_test)
     print('Adaboost Accuracy score: ', accuracy_score(y_test, predictions))
     print('Adaboost Precision score: ', precision_score(y_test, predictions))
     print('Adaboost Recall score: ', recall_score(y_test, predictions))
+    print('Adaboost F1 score: ', f1_score(y_test, predictions))
 
-    # Random Forest - precision score is wonky, produces errors
-    # rf = RandomForestClassifier(max_depth=2, random_state=0)
-    # rf.fit(X_train_cv, y_train)
-    # predictions = rf.predict(X_test_cv)
-    # print('RandomForest Accuracy score: ', accuracy_score(y_test, predictions))
-    # print('RandomForest Precision score: ', precision_score(y_test, predictions))
-    # print('RandomForest Recall score: ', recall_score(y_test, predictions))
+    # Random Forest
+    rf = clf(RandomForestClassifier(max_depth=2, random_state=0))
+    rf.fit(X_train, y_train)
+    predictions = rf.predict(X_test)
+    print('RandomForest Accuracy score: ', accuracy_score(y_test, predictions))
+    print('RandomForest Precision score: ', precision_score(y_test, predictions))
+    print('RandomForest Recall score: ', recall_score(y_test, predictions))
+    print('RandomForest F1 score: ', f1_score(y_test, predictions))
 
     # Gradient Boosting
-    gb = GradientBoostingClassifier(loss='deviance')
-    gb.fit(X_train_cv, y_train)
-    predictions = gb.predict(X_test_cv)
+    gb = clf(GradientBoostingClassifier(loss='deviance'))
+    gb.fit(X_train, y_train)
+    predictions = gb.predict(X_test)
     print('GB Accuracy score: ', accuracy_score(y_test, predictions))
     print('GB Precision score: ', precision_score(y_test, predictions))
     print('GB Recall score: ', recall_score(y_test, predictions))
+    print('GB F1 score: ', f1_score(y_test, predictions))
 
     # K-neighbors
-    # kn = KNeighborsClassifier()
-    # kn.fit(X_train_cv2, y_train)
-    # predictions = kn.predict(X_test_cv2)
-    # print('KN Accuracy score: ', accuracy_score(y_test, predictions))
-    # print('KN Precision score: ', precision_score(y_test, predictions))
-    # print('KN Recall score: ', recall_score(y_test, predictions))
+    kn = clf(KNeighborsClassifier())
+    kn.fit(X_train, y_train)
+    predictions = kn.predict(X_test)
+    print('KN Accuracy score: ', accuracy_score(y_test, predictions))
+    print('KN Precision score: ', precision_score(y_test, predictions))
+    print('KN Recall score: ', recall_score(y_test, predictions))
+    print('KN F1 score: ', f1_score(y_test, predictions))
 
 if __name__ == "__main__":
     main()
