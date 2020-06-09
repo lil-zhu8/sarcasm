@@ -71,39 +71,6 @@ def read_reddit_label(filename = 'data/reddit/train-balanced.csv'):
 			artList.append(art)
 	return artList
 
-def naive_headlines(articles=read_headlines()):
-	artlist = {}
-	numHeadlines = 0
-	countSarc = 0
-	for i, art in enumerate(articles):
-		numHeadlines = i  
-		if art["is_sarcastic"] == 1: countSarc += 1
-		artlist[art["headline"]] = art["is_sarcastic"]
-	#print("num headlines: {}".format(numHeadlines+1))
-	#print("percent sarc: {}".format(countSarc/float(numHeadlines)*100))
-	return artlist
-
-# extract tweets as dict mapping tweet to sarcasm = 1, not sarcasm = 0 
-def read_tweets(filename = 'data/twitter/sarcasm-dataset.txt'):
-	tweetlist = {}
-	numTweets = 0
-	with open(filename, 'r') as fp:
-		for i,twt in enumerate(fp):
-			numTweets = i  
-			tweetlist[twt[0:len(twt)-2].strip()] = twt[-2]
-	print("num tweets: {}".format(numTweets+1))
-	return tweetlist
-
-def read_tweets_API(filename = 'data/twitter/Tweet-Stream-API.txt'):
-	tweetlist = {}
-	numTweets = 0
-	with open(filename, 'r') as fp:
-		for i,twt in enumerate(fp):
-			numTweets = i  
-			tweetlist[twt[0:len(twt)-2].strip()] = twt[-2]
-	print("num tweets (API): {}".format(numTweets+1))
-	return tweetlist
-
 def read_tweets_csv(filename = 'data/twitter/dataset_csv.csv'):
 	tweetlist = {}
 	numTweets = 0
