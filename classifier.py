@@ -2,6 +2,7 @@ import json, csv, sys, getopt, os, math, operator, random, scipy, nltk
 import numpy as np
 from nltk.tokenize import TweetTokenizer 
 from collections import defaultdict
+from sklearn.svm import SVC
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier, GradientBoostingClassifier
@@ -25,6 +26,7 @@ def read_headlines(filename = 'data/headlines/Sarcasm_Headlines_Dataset.json'):
             artList.append(art)
     return artList
 
+# associate headlines with labels
 def naive_headlines(articles=read_headlines()):
     artlist = {}
     for art in articles:
@@ -48,6 +50,7 @@ def read_reddit(filename = 'data/reddit/comments.json'):
             c = json.loads(jsonObj)
     return c
 
+# associates comments with labels, also extracts votes
 def read_reddit_label(filename = 'data/reddit/train-balanced.csv'):
     comments = read_reddit()
     with open(filename) as csv_file:
@@ -68,6 +71,7 @@ def read_reddit_label(filename = 'data/reddit/train-balanced.csv'):
         print(f'Processed {line_count} lines.')
         return ([comments[i]['text'] for i in list(lab.keys())], list(lab.values()))
 
+# collects tweets and labels from csv file
 def read_tweets_csv(filename = 'data/twitter/dataset_csv.csv'):
     tweetlist = {}
     numTweets = 0
@@ -78,11 +82,14 @@ def read_tweets_csv(filename = 'data/twitter/dataset_csv.csv'):
     print("num tweets (csv file): {}".format(numTweets+1))
     return tweetlist
 
+# finds length of each document in the corpus
 def get_length(x):
     return np.array([len(t) for t in x]).reshape(-1, 1)
 
+
 posW = set()
 negW = set()
+# extracts positive and negative sentiment lexicons from NRC set
 def buildSentiment():
     with open('data/sentiment/NRC-emotion-lexicon.txt', 'r') as fp:
         for line in fp:
@@ -92,6 +99,7 @@ def buildSentiment():
             if emotion == 'negative' and int(value) == 1:
                 negW.add(word)
 
+# finds the number of positive and negative sentiment words, as well as their ratio (with correction for negative denominator).
 def use_sentiment(x):
     sent = []
     for t in x:
@@ -105,17 +113,21 @@ def use_sentiment(x):
                 negcount += 1
         if negcount != 0:
             ratio = float(poscount)/negcount
-        if poscount == 0:
+        if poscount == 0 and negcount == 0:
             ratio = 0
+        elif poscount == 0 and negcount != 0:
+            ratio = negcount
         sent.append([poscount,negcount,ratio])
     return np.array(sent).reshape(-1, 3)
 
+# takes the votes on the comment into account
 def use_score(x):
     if len(x) == len(votes_train):
         return np.array(votes_train).reshape(-1, 2)
     else:
         return np.array(votes_test).reshape(-1, 2)
 
+# adds parts of speech tags to each word, appended with a /
 def add_pos(x):
     docs = []
     for t in x:
@@ -127,6 +139,7 @@ def add_pos(x):
 
     return docs
 
+# builds pipeline for the classifier, using text (character) features, document length, sentiment, POS tags, and votes
 def clf(classifier = MultinomialNB()):
     c = Pipeline([
         ('features', FeatureUnion([
@@ -140,10 +153,10 @@ def clf(classifier = MultinomialNB()):
             ('sentiment', Pipeline([
                 ('sentcount', FunctionTransformer(use_sentiment, validate=False)),
             ])),
-            ('POS', Pipeline([
-                ('tags', FunctionTransformer(add_pos, validate=False)),
-                ('vect', CountVectorizer()),
-            ]))
+            # ('POS', Pipeline([
+            #     ('tags', FunctionTransformer(add_pos, validate=False)),
+            #     ('vect', CountVectorizer()),
+            # ])),
             # ('votes', Pipeline([
             #     ('updown', FunctionTransformer(use_score, validate=False)),
             # ]))
@@ -160,7 +173,7 @@ def main():
 
     # setup for SARC 2.0 dataset
     comments = read_reddit()
-    X_train,y_train = read_reddit_label()
+    X_train, y_train = read_reddit_label()
     X_test, y_test = read_reddit_label('data/reddit/test-balanced.csv')
     buildSentiment()
 
@@ -168,6 +181,17 @@ def main():
     cv = CountVectorizer(analyzer='char', ngram_range=(1, 6))
     X_train_cv = cv.fit_transform(X_train)
     X_test_cv = cv.transform(X_test)
+
+    
+    # SVC
+    # svc = clf(SVC())
+    # svc.fit(X_train, y_train)
+    # predictions = svc.predict(X_test)
+    # print('SVC Accuracy score: ', accuracy_score(y_test, predictions))
+    # print('SVC Precision score: ', precision_score(y_test, predictions))
+    # print('SVC Recall score: ', recall_score(y_test, predictions))
+    # print('SVC F1 score: ', f1_score(y_test, predictions))
+
 
     # Naïve Bayes
 
@@ -179,19 +203,34 @@ def main():
     print('NB Recall score: ', recall_score(y_test, predictions))
     print('NB F1 score: ', f1_score(y_test, predictions))
 
+    acc_sarc = 0
+    acc_non = 0
+    count_sarc = 0
+    count_non = 0
+    for i in range(len(predictions)):
+        if predictions[i] == 1:
+            count_sarc += 1
+            if y_test[i] == 1:
+                acc_sarc += 1
+        if predictions[i] == 0:
+            count_non += 1
+            if y_test[i] == 0:
+                acc_non += 1
+    print(acc_sarc/count_sarc, acc_non/count_non)
 
     # Logistic Regression
     lr = clf(LogisticRegression())
     lr.fit(X_train,y_train)
 
     # print top 20 weights
-    coeff = lr.named_steps['clf'].coef_[0]
-    fnames = dict(lr.named_steps['features'].transformer_list).get('text').named_steps['vectorizer'].get_feature_names()
-    coefs_with_fns = sorted(zip(coeff[0:len(fnames)+1], fnames))
-    top = zip(coefs_with_fns[:20], coefs_with_fns[:-(20 + 1):-1])
 
-    for (coef_1, fn_1), (coef_2, fn_2) in top:
-        print ("\t%.4f\t%-15s\t\t%.4f\t%-15s" % (coef_1, fn_1, coef_2, fn_2))
+    # coeff = lr.named_steps['clf'].coef_[0]
+    # fnames = dict(lr.named_steps['features'].transformer_list).get('text').named_steps['vectorizer'].get_feature_names()
+    # coefs_with_fns = sorted(zip(coeff[0:len(fnames)+1], fnames))
+    # top = zip(coefs_with_fns[:20], coefs_with_fns[:-(20 + 1):-1])
+
+    # for (coef_1, fn_1), (coef_2, fn_2) in top:
+    #     print ("\t%.4f\t%-15s\t\t%.4f\t%-15s" % (coef_1, fn_1, coef_2, fn_2))
 
     predictions = lr.predict(X_test)
     print('LR Accuracy score: ', accuracy_score(y_test, predictions))
@@ -199,14 +238,39 @@ def main():
     print('LR Recall score: ', recall_score(y_test, predictions))
     print('LR F1 score: ', f1_score(y_test, predictions))
 
+    acc_sarc = 0
+    acc_non = 0
+    count_sarc = 0
+    count_non = 0
+    for i in range(len(predictions)):
+        if predictions[i] == 1:
+            count_sarc += 1
+            if y_test[i] == 1:
+                acc_sarc += 1
+        if predictions[i] == 0:
+            count_non += 1
+            if y_test[i] == 0:
+                acc_non += 1
+    print(acc_sarc/count_sarc, acc_non/count_non)
+
+    # SVC
+    # svc = clf(SVC())
+    # svc.fit(X_train, y_train)
+    # predictions = svc.predict(X_test)
+    # print('SVC Accuracy score: ', accuracy_score(y_test, predictions))
+    # print('SVC Precision score: ', precision_score(y_test, predictions))
+    # print('SVC Recall score: ', recall_score(y_test, predictions))
+    # print('SVC F1 score: ', f1_score(y_test, predictions))
+
+
     # Adaboost Classifier
-    abc = clf(AdaBoostClassifier(n_estimators=1000, learning_rate = 0.9, random_state=0))
-    abc.fit(X_train, y_train)
-    predictions = abc.predict(X_test)
-    print('Adaboost Accuracy score: ', accuracy_score(y_test, predictions))
-    print('Adaboost Precision score: ', precision_score(y_test, predictions))
-    print('Adaboost Recall score: ', recall_score(y_test, predictions))
-    print('Adaboost F1 score: ', f1_score(y_test, predictions))
+    # abc = clf(AdaBoostClassifier(n_estimators=1000, learning_rate = 0.9, random_state=0))
+    # abc.fit(X_train, y_train)
+    # predictions = abc.predict(X_test)
+    # print('Adaboost Accuracy score: ', accuracy_score(y_test, predictions))
+    # print('Adaboost Precision score: ', precision_score(y_test, predictions))
+    # print('Adaboost Recall score: ', recall_score(y_test, predictions))
+    # print('Adaboost F1 score: ', f1_score(y_test, predictions))
 
     # Random Forest
     # rf = clf(RandomForestClassifier(max_depth=2, random_state=0))
@@ -226,14 +290,29 @@ def main():
     print('GB Recall score: ', recall_score(y_test, predictions))
     print('GB F1 score: ', f1_score(y_test, predictions))
 
+    acc_sarc = 0
+    acc_non = 0
+    count_sarc = 0
+    count_non = 0
+    for i in range(len(predictions)):
+        if predictions[i] == 1:
+            count_sarc += 1
+            if y_test[i] == 1:
+                acc_sarc += 1
+        if predictions[i] == 0:
+            count_non += 1
+            if y_test[i] == 0:
+                acc_non += 1
+    print(acc_sarc/count_sarc, acc_non/count_non)
+
     # K-neighbors
-    kn = clf(KNeighborsClassifier())
-    kn.fit(X_train, y_train)
-    predictions = kn.predict(X_test)
-    print('KN Accuracy score: ', accuracy_score(y_test, predictions))
-    print('KN Precision score: ', precision_score(y_test, predictions))
-    print('KN Recall score: ', recall_score(y_test, predictions))
-    print('KN F1 score: ', f1_score(y_test, predictions))
+    # kn = clf(KNeighborsClassifier())
+    # kn.fit(X_train, y_train)
+    # predictions = kn.predict(X_test)
+    # print('KN Accuracy score: ', accuracy_score(y_test, predictions))
+    # print('KN Precision score: ', precision_score(y_test, predictions))
+    # print('KN Recall score: ', recall_score(y_test, predictions))
+    # print('KN F1 score: ', f1_score(y_test, predictions))
 
 if __name__ == "__main__":
     main()
