@@ -11,8 +11,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.preprocessing import FunctionTransformer
-from gensim.scripts.glove2word2vec import glove2word2vec
-from gensim.models.keyedvectors import KeyedVectors
 from scipy.sparse import hstack, csr_matrix
 from nltk.tokenize import word_tokenize
 
@@ -99,19 +97,35 @@ def use_sentiment(x):
     for t in x:
         words = t.split()
         poscount = negcount = 0
+        ratio = 100
         for word in words:
             if word in posW:
                 poscount += 1
             if word in negW:
                 negcount += 1
-        sent.append([poscount,negcount])
-    return np.array(sent).reshape(-1, 2)
+        if negcount != 0:
+            ratio = float(poscount)/negcount
+        if poscount == 0:
+            ratio = 0
+        sent.append([poscount,negcount,ratio])
+    return np.array(sent).reshape(-1, 3)
 
 def use_score(x):
     if len(x) == len(votes_train):
         return np.array(votes_train).reshape(-1, 2)
     else:
         return np.array(votes_test).reshape(-1, 2)
+
+def add_pos(x):
+    docs = []
+    for t in x:
+        text_tagged = nltk.pos_tag(t)
+        new_text = [word[0] + "/" + word[1] for word in text_tagged]
+
+        doc = ' '.join(new_text)
+        docs.append(doc)
+
+    return docs
 
 def clf(classifier = MultinomialNB()):
     c = Pipeline([
@@ -126,9 +140,13 @@ def clf(classifier = MultinomialNB()):
             ('sentiment', Pipeline([
                 ('sentcount', FunctionTransformer(use_sentiment, validate=False)),
             ])),
-            ('votes', Pipeline([
-                ('updown', FunctionTransformer(use_score, validate=False)),
+            ('POS', Pipeline([
+                ('tags', FunctionTransformer(add_pos, validate=False)),
+                ('vect', CountVectorizer()),
             ]))
+            # ('votes', Pipeline([
+            #     ('updown', FunctionTransformer(use_score, validate=False)),
+            # ]))
         ])),
         ('clf', classifier)])
     return c
@@ -191,13 +209,13 @@ def main():
     print('Adaboost F1 score: ', f1_score(y_test, predictions))
 
     # Random Forest
-    rf = clf(RandomForestClassifier(max_depth=2, random_state=0))
-    rf.fit(X_train, y_train)
-    predictions = rf.predict(X_test)
-    print('RandomForest Accuracy score: ', accuracy_score(y_test, predictions))
-    print('RandomForest Precision score: ', precision_score(y_test, predictions))
-    print('RandomForest Recall score: ', recall_score(y_test, predictions))
-    print('RandomForest F1 score: ', f1_score(y_test, predictions))
+    # rf = clf(RandomForestClassifier(max_depth=2, random_state=0))
+    # rf.fit(X_train, y_train)
+    # predictions = rf.predict(X_test)
+    # print('RandomForest Accuracy score: ', accuracy_score(y_test, predictions))
+    # print('RandomForest Precision score: ', precision_score(y_test, predictions))
+    # print('RandomForest Recall score: ', recall_score(y_test, predictions))
+    # print('RandomForest F1 score: ', f1_score(y_test, predictions))
 
     # Gradient Boosting
     gb = clf(GradientBoostingClassifier(loss='deviance'))
